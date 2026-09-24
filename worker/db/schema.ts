@@ -1,4 +1,5 @@
 import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { SCAN_MODES } from "../mode";
 
 export const scanSessions = sqliteTable("scan_sessions", {
   id: text("id").primaryKey(),
@@ -30,6 +31,12 @@ export const items = sqliteTable(
     retailPriceCents: integer("retail_price_cents"),
     activePriceCents: integer("active_price_cents"),
     soldPriceCents: integer("sold_price_cents"),
+    mode: text("mode", { enum: SCAN_MODES }).notNull().default("buy"),
+    listPriceCents: integer("list_price_cents"),
+    minimumOfferCents: integer("minimum_offer_cents"),
+    yardSalePriceCents: integer("yard_sale_price_cents"),
+    listingTitle: text("listing_title"),
+    listingDescription: text("listing_description"),
     valueSummary: text("value_summary").notNull(),
     thumbnailKey: text("thumbnail_key").notNull(),
     boxXMin: integer("box_x_min"),
@@ -42,7 +49,7 @@ export const items = sqliteTable(
     seenCount: integer("seen_count").notNull().default(1),
   },
   (table) => [
-    uniqueIndex("items_fingerprint_unique").on(table.fingerprint),
+    uniqueIndex("items_mode_fingerprint_unique").on(table.mode, table.fingerprint),
     index("items_session_idx").on(table.scanSessionId),
     index("items_last_seen_idx").on(table.lastSeenAt),
   ],

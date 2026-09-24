@@ -1,3 +1,5 @@
+export type ScanMode = "buy" | "sell";
+
 export type Stats = {
   framesProcessed: number;
   itemsIdentified: number;
@@ -39,6 +41,12 @@ export type DetectedItem = {
   retailPriceCents: number | null;
   activePriceCents: number | null;
   soldPriceCents: number | null;
+  mode: ScanMode;
+  listPriceCents: number | null;
+  minimumOfferCents: number | null;
+  yardSalePriceCents: number | null;
+  listingTitle: string | null;
+  listingDescription: string | null;
   valueSummary: string;
   thumbnailUrl: string;
   boundingBox: BoundingBox | null;

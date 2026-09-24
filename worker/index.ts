@@ -3,8 +3,9 @@ import { desc, eq, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import type { AgentRunEvent, AgentRunHistory, AnalysisResponse, Comparable, DetectedItem, HistoryPage, Stats } from "../src/types";
 import { HISTORY_PAGE_SIZE, HistoryQueryError, historyQuery } from "./history";
-import { AGENT_INSTRUCTIONS, analyzeFrame, buildAgentInputText } from "./agent";
+import { agentInstructions, analyzeFrame, buildAgentInputText } from "./agent";
 import { appStats, frameRuns, items, scanSessions, valuationSources } from "./db/schema";
+import { parseScanMode, ScanModeError } from "./mode";
 import { fingerprintSimilarity, normalizeFingerprint } from "./normalize";
 
 const MAX_FRAME_BYTES = 2_500_000;
@@ -71,7 +72,9 @@ export default {
 
       return Response.json({ error: "Not found" }, { status: 404 });
     } catch (error) {
-      const status = error instanceof HttpError ? error.status : error instanceof HistoryQueryError ? 400 : 500;
+      const status = error instanceof HttpError
+        ? error.status
+        : error instanceof HistoryQueryError || error instanceof ScanModeError ? 400 : 500;
       const message = error instanceof Error ? error.message : "Unexpected error";
       console.error(JSON.stringify({ message: "request failed", path: url.pathname, status, error: message }));
       return Response.json({ error: message }, { status });
@@ -109,6 +112,7 @@ async function analyzeRequest(request: Request, env: Env): Promise<Response> {
   const sessionId = form.get("sessionId");
   const capturedAtValue = form.get("capturedAt");
   const findCriteriaValue = form.get("findCriteria");
+  const mode = parseScanMode(form.get("mode"));
 
   if (!(image instanceof File) || !image.type.startsWith("image/")) {
     throw new HttpError(400, "A JPEG or WebP frame is required.");
@@ -151,6 +155,7 @@ async function analyzeRequest(request: Request, env: Env): Promise<Response> {
       db,
       sessionId,
       findCriteria,
+      mode,
       ebayCredentials:
         env.EBAY_CLIENT_ID && env.EBAY_CLIENT_SECRET
           ? { clientId: env.EBAY_CLIENT_ID, clientSecret: env.EBAY_CLIENT_SECRET }
@@ -160,6 +165,7 @@ async function analyzeRequest(request: Request, env: Env): Promise<Response> {
     const knownFingerprints = await db
       .select({ id: items.id, fingerprint: items.fingerprint })
       .from(items)
+      .where(eq(items.mode, mode))
       .orderBy(desc(items.lastSeenAt))
       .limit(250);
 
@@ -198,6 +204,12 @@ async function analyzeRequest(request: Request, env: Env): Promise<Response> {
           retailPriceCents: candidate.retailPriceCents,
           activePriceCents: candidate.activePriceCents,
           soldPriceCents: candidate.soldPriceCents,
+          mode,
+          listPriceCents: candidate.listPriceCents,
+          minimumOfferCents: candidate.minimumOfferCents,
+          yardSalePriceCents: candidate.yardSalePriceCents,
+          listingTitle: candidate.listingTitle,
+          listingDescription: candidate.listingDescription,
           valueSummary: candidate.valueSummary,
           thumbnailKey,
           boxXMin: candidate.boundingBox.xMin,
@@ -210,7 +222,7 @@ async function analyzeRequest(request: Request, env: Env): Promise<Response> {
           seenCount: 1,
         })
         .onConflictDoUpdate({
-          target: items.fingerprint,
+          target: [items.mode, items.fingerprint],
           set: {
             name: candidate.name,
             category: candidate.category,
@@ -226,6 +238,11 @@ async function analyzeRequest(request: Request, env: Env): Promise<Response> {
             retailPriceCents: candidate.retailPriceCents,
             activePriceCents: candidate.activePriceCents,
             soldPriceCents: candidate.soldPriceCents,
+            listPriceCents: candidate.listPriceCents,
+            minimumOfferCents: candidate.minimumOfferCents,
+            yardSalePriceCents: candidate.yardSalePriceCents,
+            listingTitle: candidate.listingTitle,
+            listingDescription: candidate.listingDescription,
             valueSummary: candidate.valueSummary,
             thumbnailKey,
             boxXMin: candidate.boundingBox.xMin,
@@ -277,6 +294,12 @@ async function analyzeRequest(request: Request, env: Env): Promise<Response> {
         retailPriceCents: candidate.retailPriceCents,
         activePriceCents: candidate.activePriceCents,
         soldPriceCents: candidate.soldPriceCents,
+        mode,
+        listPriceCents: candidate.listPriceCents,
+        minimumOfferCents: candidate.minimumOfferCents,
+        yardSalePriceCents: candidate.yardSalePriceCents,
+        listingTitle: candidate.listingTitle,
+        listingDescription: candidate.listingDescription,
         valueSummary: candidate.valueSummary,
         thumbnailUrl: `/api/thumbnails/${thumbnailKey}`,
         boundingBox: candidate.boundingBox,
@@ -358,11 +381,11 @@ async function analyzeRequest(request: Request, env: Env): Promise<Response> {
         modelCalls: 0,
         searchesPerformed: 0,
         model: env.OPENAI_MODEL,
-        instructions: AGENT_INSTRUCTIONS,
+        instructions: agentInstructions(mode),
         inputJson: JSON.stringify({
           role: "user",
           content: [
-            { type: "input_text", text: buildAgentInputText(findCriteria) },
+            { type: "input_text", text: buildAgentInputText(findCriteria, mode) },
             { type: "input_image", image: "[frame stored in R2]", detail: "high" },
           ],
         }),
@@ -536,6 +559,12 @@ async function hydrateItems(env: Env, rows: Array<typeof items.$inferSelect>): P
     retailPriceCents: row.retailPriceCents,
     activePriceCents: row.activePriceCents,
     soldPriceCents: row.soldPriceCents,
+    mode: row.mode,
+    listPriceCents: row.listPriceCents,
+    minimumOfferCents: row.minimumOfferCents,
+    yardSalePriceCents: row.yardSalePriceCents,
+    listingTitle: row.listingTitle,
+    listingDescription: row.listingDescription,
     valueSummary: row.valueSummary,
     thumbnailUrl: `/api/thumbnails/${row.thumbnailKey}`,
     boundingBox:

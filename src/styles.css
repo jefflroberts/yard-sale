@@ -29,6 +29,9 @@ button:focus-visible, a:focus-visible, summary:focus-visible, select:focus-visib
   .thumbnail-wrap,
   .confidence,
   .repeat-badge,
+  .sell-badge,
+  .mode-toggle,
+  .listing-draft,
   .error-banner,
   .bottom-nav,
   .bottom-nav a,
@@ -62,7 +65,7 @@ button:focus-visible, a:focus-visible, summary:focus-visible, select:focus-visib
 .camera-empty::before { content: ""; position: absolute; inset: 0; opacity: .18; background-image: linear-gradient(rgba(255,255,255,.055) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.055) 1px, transparent 1px); background-size: 60px 60px; mask-image: radial-gradient(circle, black, transparent 75%); }
 .reticle { width: 98px; height: 98px; display: grid; place-items: center; color: rgba(255,255,255,.72); border: 1px solid rgba(255,255,255,.24); border-radius: 50%; box-shadow: 0 0 0 14px rgba(255,255,255,.025), 0 0 70px rgba(246,191,52,.16); }
 
-.scan-topbar { position: absolute; z-index: 10; top: 0; left: 0; right: 0; display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: center; gap: 8px; padding: max(12px, env(safe-area-inset-top)) 14px 8px; }
+.scan-topbar { position: absolute; z-index: 10; top: 0; left: 0; right: 0; display: grid; grid-template-columns: minmax(0,1fr) auto auto auto; align-items: center; gap: 8px; padding: max(12px, env(safe-area-inset-top)) 14px 8px; }
 .camera-select-control { min-width: 0; width: fit-content; max-width: min(48vw, 300px); height: 34px; display: flex; align-items: center; gap: 5px; padding: 0 9px; color: white; background: var(--glass); border: 1px solid rgba(255,255,255,.18); border-radius: 999px; backdrop-filter: blur(18px) saturate(130%); box-shadow: 0 6px 24px rgba(0,0,0,.18); }
 .camera-select-control svg { flex: 0 0 auto; }
 .camera-select-control select { min-width: 0; max-width: 245px; border: 0; outline: 0; background: transparent; font-size: 11px; font-weight: 600; text-overflow: ellipsis; cursor: pointer; }
@@ -70,6 +73,9 @@ button:focus-visible, a:focus-visible, summary:focus-visible, select:focus-visib
 .live-state span { width: 7px; height: 7px; background: #8a8c85; border-radius: 50%; }
 .live-state.is-live { color: white; background: rgba(195,32,40,.84); }
 .live-state.is-live span { background: white; box-shadow: 0 0 0 4px rgba(255,255,255,.16); animation: pulse 1.25s ease-in-out infinite; }
+.mode-toggle { height: 36px; display: flex; padding: 3px; background: var(--glass); border: 1px solid rgba(255,255,255,.18); border-radius: 11px; backdrop-filter: blur(18px); }
+.mode-toggle button { padding: 0 13px; color: rgba(255,255,255,.7); background: none; border: 0; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; }
+.mode-toggle button.active { color: #1a160a; background: var(--gold); }
 .settings-trigger { width: 34px; height: 34px; display: grid; place-items: center; padding: 0; color: white; background: var(--glass); border: 1px solid rgba(255,255,255,.18); border-radius: 11px; cursor: pointer; backdrop-filter: blur(18px); }
 .spin { animation: spin .8s linear infinite; }
 
@@ -99,6 +105,7 @@ button:focus-visible, a:focus-visible, summary:focus-visible, select:focus-visib
 .overlay-card .item-meta { color: rgba(255,255,255,.58); }
 .item-meta > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .repeat-badge { flex: 0 0 auto; padding: 2px 5px; color: #6a5011; background: #f4d87f; border-radius: 4px; }
+.sell-badge { flex: 0 0 auto; padding: 2px 5px; color: #dff3e8; background: var(--green); border-radius: 4px; }
 .found-time { flex: 0 0 auto; margin-left: auto; color: #9a9a92; font-weight: 600; letter-spacing: 0; text-transform: none; }
 .item-copy h3 { overflow: hidden; margin: 5px 0 3px; font: 700 15px/1.05 "Space Grotesk", sans-serif; letter-spacing: -.025em; text-overflow: ellipsis; white-space: nowrap; }
 .item-copy p { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin: 0; color: rgba(255,255,255,.58); font-size: 10px; line-height: 1.3; }
@@ -145,6 +152,8 @@ button:focus-visible, a:focus-visible, summary:focus-visible, select:focus-visib
 .history-search:focus-within { border-color: var(--gold); }
 .history-search input { width: 100%; min-width: 0; padding: 14px 0; color: white; background: transparent; border: 0; outline: none; font: inherit; font-size: 14px; }
 .history-search input::-webkit-search-cancel-button { display: none; }
+.history-mode-filter { width: min(1180px,100%); margin: -8px auto 20px; }
+.history-mode-filter button { min-height: 32px; padding-inline: 13px; font-size: 11px; }
 .history-search button { display: grid; place-items: center; min-width: 32px; min-height: 36px; color: inherit; background: none; border: 0; cursor: pointer; }
 .history-status { display: flex; align-items: center; justify-content: center; gap: 12px; color: rgba(255,255,255,.65); font-size: 13px; text-align: center; }
 .history-load-more { display: block; margin: 20px auto; padding: 12px 20px; color: white; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.16); border-radius: 14px; font: inherit; font-size: 13px; cursor: pointer; }
@@ -241,6 +250,19 @@ button:focus-visible, a:focus-visible, summary:focus-visible, select:focus-visib
 .detail-values .price-box span { color: var(--muted); font-size: 9px; }
 .detail-values .price-box strong { color: var(--green); font-size: clamp(20px,4vw,27px); white-space: normal; }
 .detail-values .retail-price strong { color: var(--ink); }
+.seller-pricing { margin: 20px 0 8px; color: var(--ink); }
+.seller-pricing .sell-prices { grid-template-columns: repeat(3,minmax(0,1fr)); padding: 2px 0 14px; }
+.seller-pricing .price-box { min-height: 54px; align-content: center; }
+.seller-pricing .price-box + .price-box { padding-left: 14px; border-left-color: rgba(23,23,19,.14); }
+.seller-pricing .price-box span { color: var(--muted); font-size: 9px; }
+.seller-pricing .price-box strong { color: var(--ink); font-size: clamp(18px,4vw,24px); white-space: normal; }
+.seller-pricing .resale-price strong { color: var(--green); }
+.listing-draft { display: grid; gap: 6px; padding: 12px 14px 14px; background: white; border: 1px solid rgba(23,23,19,.12); border-radius: 12px; }
+.listing-draft header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.listing-draft h3 { margin: 0; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.listing-draft button { display: flex; align-items: center; gap: 5px; min-height: 32px; padding: 0 11px; color: white; background: var(--ink); border: 0; border-radius: 9px; font-size: 12px; font-weight: 700; cursor: pointer; }
+.listing-draft strong { font: 700 16px/1.25 "Space Grotesk",sans-serif; }
+.listing-draft p { margin: 0; color: #3b3b35; font-size: 13px; line-height: 1.5; white-space: pre-line; }
 .detail-values > p { margin: 12px 0 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
 .lens-search-link { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 9px 12px; color: var(--ink); background: white; border: 2px solid var(--ink); border-radius: 12px; font-size: 12px; font-weight: 700; text-decoration: none; }
 .lens-search-link:hover { color: var(--green); border-color: var(--green); }
@@ -276,7 +298,8 @@ button:focus-visible, a:focus-visible, summary:focus-visible, select:focus-visib
 }
 
 @media (max-width: 620px) {
-  .scan-topbar { grid-template-columns: minmax(0,1fr) auto auto; padding-inline: 11px; gap: 7px; }
+  .scan-topbar { grid-template-columns: minmax(0,1fr) auto auto auto; padding-inline: 11px; gap: 7px; }
+  .mode-toggle button { padding-inline: 10px; }
   .camera-select-control { max-width: 52vw; padding-inline: 8px; }
   .camera-select-control select { width: 100%; }
   .live-state { padding-inline: 9px; }

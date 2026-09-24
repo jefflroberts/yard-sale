@@ -4,8 +4,10 @@ import {
   Archive,
   Bot,
   Camera,
+  Check,
   ChevronRight,
   CircleDollarSign,
+  Copy,
   Download,
   ExternalLink,
   Gauge,
@@ -21,7 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AgentRunHistory, AnalysisResponse, DetectedItem, HistoryPage, Stats } from "./types";
+import type { AgentRunHistory, AnalysisResponse, DetectedItem, HistoryPage, ScanMode, Stats } from "./types";
 
 const EMPTY_STATS: Stats = {
   framesProcessed: 0,
@@ -33,6 +35,7 @@ const EMPTY_STATS: Stats = {
 const DEFAULT_MAX_CONCURRENT_FRAMES = 5;
 const MAX_CONCURRENT_FRAMES_SETTING = 100;
 const FIND_CRITERIA_STORAGE_KEY = "yard-sale-find-criteria";
+const SCAN_MODE_STORAGE_KEY = "yard-sale-scan-mode";
 const FIND_CRITERIA_PRESETS = [
   { label: "Vintage tees", value: "Vintage band tees worth more than $40" },
   { label: "Modern electronics", value: "Electronics that are still modern enough to use" },
@@ -44,6 +47,7 @@ const FIND_CRITERIA_PRESETS = [
 
 type View = "scan" | "history";
 type Source = "camera" | "video" | "image";
+type HistoryModeFilter = ScanMode | "all";
 
 async function fetchStats(): Promise<Stats> {
   const response = await fetch("/api/stats");
@@ -51,18 +55,24 @@ async function fetchStats(): Promise<Stats> {
   return response.json();
 }
 
-async function fetchItems(search: string, cursor: string | null, signal: AbortSignal): Promise<HistoryPage> {
+async function fetchItems(
+  search: string,
+  mode: HistoryModeFilter,
+  cursor: string | null,
+  signal: AbortSignal,
+): Promise<HistoryPage> {
   const params = new URLSearchParams({ q: search });
+  if (mode !== "all") params.set("mode", mode);
   if (cursor) params.set("cursor", cursor);
   const response = await fetch(`/api/items?${params}`, { signal });
   if (!response.ok) throw new Error("Could not load saved finds.");
   return response.json();
 }
 
-function useHistory(search: string, enabled: boolean) {
+function useHistory(search: string, enabled: boolean, mode: HistoryModeFilter = "all") {
   return useInfiniteQuery({
-    queryKey: ["items", search],
-    queryFn: ({ pageParam, signal }) => fetchItems(search, pageParam, signal),
+    queryKey: ["items", search, mode],
+    queryFn: ({ pageParam, signal }) => fetchItems(search, mode, pageParam, signal),
     initialPageParam: null as string | null,
     getNextPageParam: (page) => page.nextCursor,
     enabled,
@@ -109,6 +119,10 @@ export default function App({ children }: { children?: React.ReactNode }) {
     window.localStorage.getItem(FIND_CRITERIA_STORAGE_KEY) ?? "",
   );
   const findCriteriaRef = useRef(findCriteria);
+  const [scanMode, setScanMode] = useState<ScanMode>(() =>
+    window.localStorage.getItem(SCAN_MODE_STORAGE_KEY) === "sell" ? "sell" : "buy",
+  );
+  const scanModeRef = useRef(scanMode);
   const [source, setSource] = useState<Source>("camera");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
@@ -133,6 +147,7 @@ export default function App({ children }: { children?: React.ReactNode }) {
   const maxConcurrentFramesRef = useRef(maxConcurrentFrames);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historySearch, setHistorySearch] = useState("");
+  const [historyMode, setHistoryMode] = useState<HistoryModeFilter>("all");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(historySearch.trim()), 250);
@@ -149,7 +164,7 @@ export default function App({ children }: { children?: React.ReactNode }) {
     ? "history"
     : "scan";
   const { data: stats = EMPTY_STATS } = useQuery({ queryKey: ["stats"], queryFn: fetchStats });
-  const history = useHistory(debouncedSearch, view === "history");
+  const history = useHistory(debouncedSearch, view === "history", historyMode);
   const savedFinds = useHistory("", settingsOpen);
   const historyItems = useMemo(() =>
     [...new Map(history.data?.pages.flatMap((page) => page.items).map((item) => [item.id, item]) ?? []).values()],
@@ -168,6 +183,12 @@ export default function App({ children }: { children?: React.ReactNode }) {
     findCriteriaRef.current = nextCriteria;
     setFindCriteria(nextCriteria);
     window.localStorage.setItem(FIND_CRITERIA_STORAGE_KEY, nextCriteria);
+  };
+
+  const updateScanMode = (nextMode: ScanMode) => {
+    scanModeRef.current = nextMode;
+    setScanMode(nextMode);
+    window.localStorage.setItem(SCAN_MODE_STORAGE_KEY, nextMode);
   };
 
   const refreshHistory = useCallback(
@@ -289,6 +310,7 @@ export default function App({ children }: { children?: React.ReactNode }) {
         form.set("sessionId", activeSessionId);
         form.set("capturedAt", new Date().toISOString());
         form.set("findCriteria", findCriteriaRef.current);
+        form.set("mode", scanModeRef.current);
         form.set("image", blob, "frame.jpg");
         const response = await fetch("/api/analyze", { method: "POST", body: form });
         const body = (await response.json()) as AnalysisResponse | { error?: string };
@@ -596,6 +618,19 @@ export default function App({ children }: { children?: React.ReactNode }) {
                   ))}
                 </select>
               </label>
+              <div className="mode-toggle" role="group" aria-label="Scan mode">
+                {(["buy", "sell"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={scanMode === mode ? "active" : ""}
+                    aria-pressed={scanMode === mode}
+                    onClick={() => updateScanMode(mode)}
+                  >
+                    {mode === "buy" ? "Buy" : "Sell"}
+                  </button>
+                ))}
+              </div>
               <div className={`live-state ${scanning ? "is-live" : ""}`} aria-live="polite">
                 <span />
                 {scanning ? "Live" : "Paused"}
@@ -670,6 +705,19 @@ export default function App({ children }: { children?: React.ReactNode }) {
             <input type="search" aria-label="Search all history" placeholder="Search all finds, brands, descriptions…"
               maxLength={500} value={historySearch} onChange={(event) => setHistorySearch(event.target.value)} />
             {historySearch && <button onClick={() => setHistorySearch("")} aria-label="Clear history search"><X size={18} /></button>}
+          </div>
+          <div className="history-mode-filter criteria-presets" role="group" aria-label="Filter by scan mode">
+            {([["all", "All"], ["buy", "Buy finds"], ["sell", "My items"]] as const).map(([mode, label]) => (
+              <button
+                key={mode}
+                type="button"
+                className={historyMode === mode ? "active" : ""}
+                aria-pressed={historyMode === mode}
+                onClick={() => setHistoryMode(mode)}
+              >
+                {label}
+              </button>
+            ))}
           </div>
           {error && (
             <div className="error-banner history-error">
@@ -942,22 +990,36 @@ function ItemCard({
       <div className="item-copy">
         <div className="item-meta">
           <span>{item.category}</span>
+          {item.mode === "sell" && <span className="sell-badge">Selling</span>}
           {item.duplicate && <span className="repeat-badge">Seen {item.seenCount}×</span>}
           {!showCapturedAt && <RelativeTime timestamp={item.firstSeenAt} />}
         </div>
         {showCapturedAt && <CapturedTime timestamp={item.lastSeenAt} />}
         <h3>{item.name}</h3>
         <p>{item.valueSummary}</p>
-        <div className="price-comparison card-prices">
-          <div className="price-box resale-price">
-            <span>Resale</span>
-            <strong>{formatRange(item)}</strong>
+        {item.mode === "sell" ? (
+          <div className="price-comparison card-prices">
+            <div className="price-box resale-price">
+              <span>Marketplace</span>
+              <strong>{optionalMoney(item.listPriceCents, item.currency)}</strong>
+            </div>
+            <div className="price-box retail-price">
+              <span>Yard sale</span>
+              <strong>{optionalMoney(item.yardSalePriceCents, item.currency)}</strong>
+            </div>
           </div>
-          <div className="price-box retail-price">
-            <span>Retail</span>
-            <strong>{item.retailPriceCents === null ? "—" : money(item.retailPriceCents, item.currency)}</strong>
+        ) : (
+          <div className="price-comparison card-prices">
+            <div className="price-box resale-price">
+              <span>Resale</span>
+              <strong>{formatRange(item)}</strong>
+            </div>
+            <div className="price-box retail-price">
+              <span>Retail</span>
+              <strong>{optionalMoney(item.retailPriceCents, item.currency)}</strong>
+            </div>
           </div>
-        </div>
+        )}
         {item.observedPriceCents !== null && <span className="tag-price">Tag {money(item.observedPriceCents, item.currency)}</span>}
       </div>
       <ChevronRight className="card-chevron" size={20} />
@@ -1083,7 +1145,7 @@ function ItemDetail({
               >
                 <span>{frameItem.category}</span>
                 <strong>{frameItem.name}</strong>
-                <b>{formatRange(frameItem)}</b>
+                <b>{frameItem.mode === "sell" ? optionalMoney(frameItem.listPriceCents, frameItem.currency) : formatRange(frameItem)}</b>
               </button>
             ))}
           </div>
@@ -1097,6 +1159,7 @@ function ItemDetail({
               <p className="eyebrow">{item.category} · {Math.round(item.confidence * 100)}% confidence</p>
               <h2>{item.name}</h2>
               <p className="detail-description">{item.description}</p>
+              {item.mode === "sell" && <SellerPricing item={item} />}
               <div className="detail-values">
                 <div className="price-comparison">
                   <div className="price-box resale-price">
@@ -1354,6 +1417,55 @@ function collectMarketEvidence(item: DetectedItem) {
     knownUrls.add(url);
   }
   return evidence;
+}
+
+function SellerPricing({ item }: { item: DetectedItem }) {
+  const [copied, setCopied] = useState(false);
+  const listing = [item.listingTitle, item.listingDescription].filter(Boolean).join("\n\n");
+  const copyListing = async () => {
+    try {
+      await navigator.clipboard.writeText(listing);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  return (
+    <section className="seller-pricing" aria-label="Seller pricing">
+      <div className="price-comparison sell-prices">
+        <div className="price-box resale-price">
+          <span>Marketplace</span>
+          <strong>{optionalMoney(item.listPriceCents, item.currency)}</strong>
+        </div>
+        <div className="price-box">
+          <span>Lowest offer</span>
+          <strong>{optionalMoney(item.minimumOfferCents, item.currency)}</strong>
+        </div>
+        <div className="price-box">
+          <span>Yard sale</span>
+          <strong>{optionalMoney(item.yardSalePriceCents, item.currency)}</strong>
+        </div>
+      </div>
+      {listing && (
+        <div className="listing-draft">
+          <header>
+            <h3>Marketplace listing</h3>
+            <button type="button" data-export-exclude onClick={() => void copyListing()}>
+              {copied ? <Check size={15} /> : <Copy size={15} />} {copied ? "Copied" : "Copy"}
+            </button>
+          </header>
+          {item.listingTitle && <strong>{item.listingTitle}</strong>}
+          {item.listingDescription && <p>{item.listingDescription}</p>}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function optionalMoney(cents: number | null, currency: string): string {
+  return cents === null ? "—" : money(cents, currency);
 }
 
 function money(cents: number, currency: string): string {

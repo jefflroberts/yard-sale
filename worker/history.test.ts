@@ -77,4 +77,22 @@ describe("history retrieval", () => {
     }
     expect(() => page(new URLSearchParams({ q: "x".repeat(501) }))).toThrow("500 characters");
   });
+
+  it("filters by scan mode and treats existing finds as buy mode", () => {
+    sqlite.exec("UPDATE items SET mode = 'sell' WHERE id IN ('001', '002')");
+    expect(page(new URLSearchParams({ mode: "sell" })).map((row) => row.id)).toEqual(["002", "001"]);
+    expect(page(new URLSearchParams({ mode: "buy" }))).toHaveLength(HISTORY_PAGE_SIZE + 1);
+    expect(page(new URLSearchParams({ mode: "sell", q: "find 001" })).map((row) => row.id)).toEqual(["001"]);
+    expect(() => page(new URLSearchParams({ mode: "trade" }))).toThrow("Invalid scan mode");
+  });
+
+  it("keeps buy and sell finds with the same fingerprint separate", () => {
+    const insertSell = (id: string) => sqlite.prepare(`INSERT INTO items
+      (id, scan_session_id, fingerprint, name, category, description, condition, confidence,
+       value_summary, thumbnail_key, raw_json, first_seen_at, last_seen_at, mode)
+      VALUES (?, 'session', '000', 'My Walkman', 'Electronics', '', 'Used', 1, '', 'frame.jpg', '{}',
+        '2026-09-17T12:00:00Z', '2026-09-17T12:00:00Z', 'sell')`).run(id);
+    insertSell("mine");
+    expect(() => insertSell("again")).toThrow("UNIQUE");
+  });
 });
