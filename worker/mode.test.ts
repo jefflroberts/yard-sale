@@ -63,3 +63,17 @@ describe("colorway rules", () => {
     }
   });
 });
+
+describe("edition price anchoring", () => {
+  it("caps in-production releases at new retail unless sold evidence supports more, in both modes", () => {
+    for (const instructions of [BUY_INSTRUCTIONS, SELL_INSTRUCTIONS]) {
+      expect(instructions).toContain("Anchor each edition's prices to evidence for that edition");
+      expect(instructions).toContain("never price it above its new retail price");
+      expect(instructions).toContain("A colorway or graphic premium requires sold evidence");
+    }
+  });
+
+  it("writes listing titles as plain statements", () => {
+    expect(SELL_INSTRUCTIONS).toContain("State the title plainly");
+  });
+});
