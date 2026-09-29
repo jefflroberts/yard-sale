@@ -4,8 +4,9 @@ import { drizzle } from "drizzle-orm/d1";
 import type { AgentRunEvent, AgentRunHistory, AnalysisResponse, DetectedItem, HistoryPage, Stats } from "../src/types";
 import { HISTORY_PAGE_SIZE, HistoryQueryError, historyQuery } from "./history";
 import { agentInstructions, analyzeFrame, buildAgentInputText } from "./agent";
-import { appStats, frameRuns, items, scanSessions, valuationSources } from "./db/schema";
-import { hydrateItems } from "./items";
+import { appStats, frameRuns, items, scanSessions } from "./db/schema";
+import { EditionSelectionError, parseEditionSelection, replaceEditions, selectEdition, syncSelectedEdition } from "./editions";
+import { hydrateItems, insertValuationSources } from "./items";
 import { parseScanMode, ScanModeError } from "./mode";
 import { fingerprintSimilarity, normalizeFingerprint } from "./normalize";
 
@@ -39,6 +40,12 @@ export default {
 
       if (request.method === "DELETE" && url.pathname === "/api/items") {
         return Response.json(await deleteAllItems(env));
+      }
+
+      if (request.method === "PATCH" && url.pathname.startsWith("/api/items/")) {
+        const itemId = decodeURIComponent(url.pathname.slice("/api/items/".length));
+        if (!itemId || itemId.includes("/")) throw new HttpError(400, "Invalid item id.");
+        return Response.json(await updateItemEdition(request, env, itemId));
       }
 
       if (request.method === "DELETE" && url.pathname.startsWith("/api/items/")) {
@@ -75,7 +82,7 @@ export default {
     } catch (error) {
       const status = error instanceof HttpError
         ? error.status
-        : error instanceof HistoryQueryError || error instanceof ScanModeError ? 400 : 500;
+        : error instanceof HistoryQueryError || error instanceof ScanModeError || error instanceof EditionSelectionError ? 400 : 500;
       const message = error instanceof Error ? error.message : "Unexpected error";
       console.error(JSON.stringify({ message: "request failed", path: url.pathname, status, error: message }));
       return Response.json({ error: message }, { status });
@@ -258,58 +265,14 @@ async function analyzeRequest(request: Request, env: Env): Promise<Response> {
         .returning();
       if (!saved) throw new Error("D1 did not return the saved item.");
       const id = saved.id;
-      const firstSeenAt = saved.firstSeenAt;
-      const seenCount = saved.seenCount;
       const duplicate = proposedId !== id;
       if (!duplicate) knownFingerprints.push({ id, fingerprint });
 
-      const comparableRows = candidate.comparables.map((comparable) => ({
-        id: crypto.randomUUID(),
-        itemId: id,
-        sourceType: comparable.type,
-        title: comparable.title,
-        url: comparable.url,
-        priceCents: comparable.priceCents,
-        currency: comparable.currency,
-        capturedAt,
-      }));
-      if (comparableRows.length > 0) {
-        await db.insert(valuationSources).values(comparableRows);
-      }
-
-      detectedItems.push({
-        id,
-        scanSessionId: sessionId,
-        fingerprint,
-        name: candidate.name,
-        category: candidate.category,
-        brand: candidate.brand,
-        model: candidate.model,
-        description: candidate.description,
-        condition: candidate.condition,
-        confidence: candidate.confidence,
-        observedPriceCents: candidate.observedPriceCents,
-        currency: candidate.currency,
-        estimatedLowCents: candidate.estimatedLowCents,
-        estimatedHighCents: candidate.estimatedHighCents,
-        retailPriceCents: candidate.retailPriceCents,
-        activePriceCents: candidate.activePriceCents,
-        soldPriceCents: candidate.soldPriceCents,
-        mode,
-        listPriceCents: candidate.listPriceCents,
-        minimumOfferCents: candidate.minimumOfferCents,
-        yardSalePriceCents: candidate.yardSalePriceCents,
-        listingTitle: candidate.listingTitle,
-        listingDescription: candidate.listingDescription,
-        valueSummary: candidate.valueSummary,
-        thumbnailUrl: `/api/thumbnails/${thumbnailKey}`,
-        boundingBox: candidate.boundingBox,
-        firstSeenAt,
-        lastSeenAt: capturedAt,
-        seenCount,
-        duplicate,
-        comparables: candidate.comparables,
-      });
+      await insertValuationSources(db, id, candidate.comparables, capturedAt);
+      await replaceEditions(db, id, candidate.editions);
+      const synced = await syncSelectedEdition(db, id);
+      const [hydrated] = await hydrateItems(db, [synced]);
+      detectedItems.push({ ...hydrated, duplicate });
     }
 
     if (detectedItems.length === 0) {
@@ -415,6 +378,17 @@ async function getItems(env: Env, params: URLSearchParams): Promise<HistoryPage>
       ? JSON.stringify({ lastSeenAt: last.lastSeenAt, id: last.id })
       : null,
   };
+}
+
+async function updateItemEdition(request: Request, env: Env, itemId: string): Promise<DetectedItem> {
+  const body = await request.json<unknown>().catch(() => {
+    throw new HttpError(400, "Request body must be JSON.");
+  });
+  const db = drizzle(env.DB);
+  const row = await selectEdition(db, itemId, parseEditionSelection(body));
+  if (!row) throw new HttpError(404, "Find not found.");
+  const [item] = await hydrateItems(db, [row]);
+  return item;
 }
 
 async function deleteItem(env: Env, itemId: string): Promise<{ deletedId: string }> {
