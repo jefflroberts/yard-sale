@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type InfiniteData, useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   Archive,
@@ -23,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { activeEditionKey, withEditionSelection } from "./editions";
 import { splitEvidence, type MarketEvidence } from "./market-evidence";
 import type { AgentRunHistory, AnalysisResponse, DetectedItem, HistoryPage, ScanMode, Stats } from "./types";
 
@@ -101,6 +102,16 @@ async function deleteFindRequest(itemId: string): Promise<void> {
 async function deleteAllFindsRequest(): Promise<void> {
   const response = await fetch("/api/items", { method: "DELETE" });
   if (!response.ok) throw new Error("Could not delete all finds.");
+}
+
+async function selectEditionRequest(itemId: string, selectedEditionKey: string | null): Promise<DetectedItem> {
+  const response = await fetch(`/api/items/${encodeURIComponent(itemId)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ selectedEditionKey }),
+  });
+  if (!response.ok) throw new Error("Could not save the edition.");
+  return response.json();
 }
 
 export default function App({ children }: { children?: React.ReactNode }) {
@@ -196,6 +207,28 @@ export default function App({ children }: { children?: React.ReactNode }) {
     async () => queryClient.invalidateQueries({ queryKey: ["items"] }),
     [queryClient],
   );
+
+  // Items live in several places (live feed, history pages, frame lists, the open detail); update them all.
+  const applyItemUpdate = useCallback((updated: DetectedItem) => {
+    const swap = (candidate: DetectedItem) => (candidate.id === updated.id ? updated : candidate);
+    setSelectedItem((current) => (current ? swap(current) : current));
+    setSelectedFrameItems((current) => current.map(swap));
+    setLiveItems((current) => current.map(swap));
+    queryClient.setQueriesData<DetectedItem[]>({ queryKey: ["frame-items"] }, (current) => current?.map(swap));
+    queryClient.setQueriesData<InfiniteData<HistoryPage>>({ queryKey: ["items"] }, (current) =>
+      current && { ...current, pages: current.pages.map((page) => ({ ...page, items: page.items.map(swap) })) },
+    );
+  }, [queryClient]);
+
+  const changeEdition = useCallback(async (item: DetectedItem, selectedEditionKey: string | null) => {
+    applyItemUpdate(withEditionSelection(item, selectedEditionKey));
+    try {
+      applyItemUpdate(await selectEditionRequest(item.id, selectedEditionKey));
+    } catch (editionError) {
+      applyItemUpdate(item);
+      throw editionError;
+    }
+  }, [applyItemUpdate]);
 
   useEffect(() => {
     return () => {
@@ -892,6 +925,7 @@ export default function App({ children }: { children?: React.ReactNode }) {
       {selectedItem && (
         <ItemDetail
           item={selectedItem}
+          onChangeEdition={(key) => changeEdition(selectedItem, key)}
           frameItems={selectedFrameItems.length > 0 ? selectedFrameItems : [selectedItem]}
           onSelect={(nextItem) => {
             setSelectedItem(nextItem);
@@ -992,6 +1026,7 @@ function ItemCard({
         <div className="item-meta">
           <span>{item.category}</span>
           {item.mode === "sell" && <span className="sell-badge">Selling</span>}
+          {item.editions.length > 1 && <span className="edition-badge">{item.editions.length} editions</span>}
           {item.duplicate && <span className="repeat-badge">Seen {item.seenCount}×</span>}
           {!showCapturedAt && <RelativeTime timestamp={item.firstSeenAt} />}
         </div>
@@ -1064,6 +1099,7 @@ function ItemDetail({
   onToggleActivity,
   onSelect,
   onClose,
+  onChangeEdition,
 }: {
   item: DetectedItem;
   frameItems: DetectedItem[];
@@ -1071,6 +1107,7 @@ function ItemDetail({
   onToggleActivity: () => void;
   onSelect: (item: DetectedItem) => void;
   onClose: () => void;
+  onChangeEdition: (selectedEditionKey: string | null) => Promise<void>;
 }) {
   const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
   const modalRef = useRef<HTMLElement>(null);
@@ -1161,6 +1198,7 @@ function ItemDetail({
               <p className="eyebrow">{item.category} · {Math.round(item.confidence * 100)}% confidence</p>
               <h2>{item.name}</h2>
               <p className="detail-description">{item.description}</p>
+              {item.editions.length > 0 && <EditionPicker key={item.id} item={item} onChange={onChangeEdition} />}
               {item.mode === "sell" && <SellerPricing item={item} />}
               <div className="detail-values">
                 <div className="price-comparison">
@@ -1397,7 +1435,7 @@ function EvidenceRow({ entry }: { entry: MarketEvidence }) {
   return entry.url ? <a href={entry.url} target="_blank" rel="noreferrer">{content}</a> : <div>{content}</div>;
 }
 
-function formatRange(item: DetectedItem): string {
+function formatRange(item: Pick<DetectedItem, "estimatedLowCents" | "estimatedHighCents" | "currency">): string {
   if (item.estimatedLowCents === null && item.estimatedHighCents === null) return "Value pending";
   if (item.estimatedLowCents === item.estimatedHighCents || item.estimatedHighCents === null) {
     return money(item.estimatedLowCents ?? item.estimatedHighCents ?? 0, item.currency);
@@ -1446,6 +1484,55 @@ function SellerPricing({ item }: { item: DetectedItem }) {
           {item.listingDescription && <p>{item.listingDescription}</p>}
         </div>
       )}
+    </section>
+  );
+}
+
+function EditionPicker({ item, onChange }: { item: DetectedItem; onChange: (selectedEditionKey: string | null) => Promise<void> }) {
+  const [tipsKey, setTipsKey] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const activeKey = activeEditionKey(item);
+  const bestKey = item.editions[0]?.key;
+
+  const choose = async (key: string) => {
+    if (key === activeKey || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await onChange(key);
+    } catch (editionError) {
+      setError(editionError instanceof Error ? editionError.message : "Could not save the edition.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="edition-picker" aria-label="Edition">
+      <h3>Which edition do you have?</h3>
+      {item.editions.map((edition) => (
+        <div key={edition.key} className={`edition-option${edition.key === activeKey ? " active" : ""}`}>
+          <button type="button" className="edition-choose" onClick={() => void choose(edition.key)} aria-pressed={edition.key === activeKey} disabled={saving}>
+            <span className="edition-label">{edition.label}</span>
+            <span className="edition-likelihood">
+              {edition.key === bestKey ? "Best guess · " : ""}{Math.round(edition.likelihood * 100)}%
+            </span>
+            <strong>
+              {item.mode === "sell"
+                ? `${optionalMoney(edition.listPriceCents, item.currency)} Marketplace`
+                : formatRange({ ...edition, currency: item.currency })}
+            </strong>
+          </button>
+          {edition.identificationTips && (
+            <button type="button" className="edition-tips-toggle" data-export-exclude onClick={() => setTipsKey(tipsKey === edition.key ? null : edition.key)} aria-expanded={tipsKey === edition.key}>
+              How to tell
+            </button>
+          )}
+          {tipsKey === edition.key && <p className="edition-tips">{edition.identificationTips}</p>}
+        </div>
+      ))}
+      {error && <p className="edition-error" role="alert">{error}</p>}
     </section>
   );
 }

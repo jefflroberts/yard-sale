@@ -30,6 +30,8 @@ button:focus-visible, a:focus-visible, summary:focus-visible, select:focus-visib
   .confidence,
   .repeat-badge,
   .sell-badge,
+  .edition-badge,
+  .edition-option,
   .mode-toggle,
   .listing-draft,
   .error-banner,
@@ -106,6 +108,7 @@ button:focus-visible, a:focus-visible, summary:focus-visible, select:focus-visib
 .item-meta > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .repeat-badge { flex: 0 0 auto; padding: 2px 5px; color: #6a5011; background: #f4d87f; border-radius: 4px; }
 .sell-badge { flex: 0 0 auto; padding: 2px 5px; color: #dff3e8; background: var(--green); border-radius: 4px; }
+.edition-badge { flex: 0 0 auto; padding: 2px 5px; color: var(--ink); background: var(--gold); border-radius: 4px; }
 .found-time { flex: 0 0 auto; margin-left: auto; color: #9a9a92; font-weight: 600; letter-spacing: 0; text-transform: none; }
 .item-copy h3 { overflow: hidden; margin: 5px 0 3px; font: 700 15px/1.05 "Space Grotesk", sans-serif; letter-spacing: -.025em; text-overflow: ellipsis; white-space: nowrap; }
 .item-copy p { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin: 0; color: rgba(255,255,255,.58); font-size: 10px; line-height: 1.3; }
@@ -263,6 +266,18 @@ button:focus-visible, a:focus-visible, summary:focus-visible, select:focus-visib
 .listing-draft button { display: flex; align-items: center; gap: 5px; min-height: 32px; padding: 0 11px; color: white; background: var(--ink); border: 0; border-radius: 9px; font-size: 12px; font-weight: 700; cursor: pointer; }
 .listing-draft strong { font: 700 16px/1.25 "Space Grotesk",sans-serif; }
 .listing-draft p { margin: 0; color: #3b3b35; font-size: 13px; line-height: 1.5; white-space: pre-line; }
+.edition-picker { display: grid; gap: 8px; margin: 18px 0 4px; color: var(--ink); }
+.edition-picker h3 { margin: 0; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.edition-option { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0 8px; padding: 10px 12px; background: white; border: 2px solid rgba(23,23,19,.12); border-radius: 12px; }
+.edition-option.active { border-color: var(--green); }
+.edition-choose { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; padding: 0; text-align: left; background: none; border: 0; cursor: pointer; }
+.edition-choose:disabled { cursor: progress; }
+.edition-label { font: 700 14px/1.2 "Space Grotesk",sans-serif; }
+.edition-likelihood { color: var(--muted); font-size: 11px; font-weight: 600; }
+.edition-choose strong { grid-column: 1 / -1; color: var(--green); font-size: 16px; }
+.edition-tips-toggle { align-self: start; padding: 4px 8px; color: var(--green); background: none; border: 1px solid currentColor; border-radius: 8px; font-size: 11px; font-weight: 700; cursor: pointer; }
+.edition-tips { grid-column: 1 / -1; margin: 8px 0 0; color: #3b3b35; font-size: 12px; line-height: 1.45; }
+.edition-error { margin: 0; color: #9b2c1f; font-size: 12px; }
 .detail-values > p { margin: 12px 0 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
 .lens-search-link { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 9px 12px; color: var(--ink); background: white; border: 2px solid var(--ink); border-radius: 12px; font-size: 12px; font-weight: 700; text-decoration: none; }
 .lens-search-link:hover { color: var(--green); border-color: var(--green); }
