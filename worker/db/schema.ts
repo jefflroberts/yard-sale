@@ -37,6 +37,7 @@ export const items = sqliteTable(
     yardSalePriceCents: integer("yard_sale_price_cents"),
     listingTitle: text("listing_title"),
     listingDescription: text("listing_description"),
+    selectedEditionKey: text("selected_edition_key"),
     valueSummary: text("value_summary").notNull(),
     thumbnailKey: text("thumbnail_key").notNull(),
     boxXMin: integer("box_x_min"),
@@ -67,9 +68,33 @@ export const valuationSources = sqliteTable(
     url: text("url"),
     priceCents: integer("price_cents"),
     currency: text("currency").notNull().default("USD"),
+    note: text("note"),
+    editionKey: text("edition_key"),
     capturedAt: text("captured_at").notNull(),
   },
   (table) => [index("valuation_sources_item_idx").on(table.itemId)],
+);
+
+export const itemEditions = sqliteTable(
+  "item_editions",
+  {
+    id: text("id").primaryKey(),
+    itemId: text("item_id")
+      .notNull()
+      .references(() => items.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    label: text("label").notNull(),
+    identificationTips: text("identification_tips").notNull(),
+    likelihood: real("likelihood").notNull(),
+    estimatedLowCents: integer("estimated_low_cents"),
+    estimatedHighCents: integer("estimated_high_cents"),
+    retailPriceCents: integer("retail_price_cents"),
+    listPriceCents: integer("list_price_cents"),
+    minimumOfferCents: integer("minimum_offer_cents"),
+    yardSalePriceCents: integer("yard_sale_price_cents"),
+    listingTitle: text("listing_title"),
+  },
+  (table) => [uniqueIndex("item_editions_item_key_unique").on(table.itemId, table.key)],
 );
 
 export const frameRuns = sqliteTable(
