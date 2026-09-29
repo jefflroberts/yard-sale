@@ -14,6 +14,23 @@ export type Comparable = {
   priceCents: number | null;
   currency: string;
   type: "retail" | "active" | "sold";
+  note: string | null;
+  editionKey: string | null;
+  capturedAt: string;
+};
+
+export type ItemEdition = {
+  key: string;
+  label: string;
+  identificationTips: string;
+  likelihood: number;
+  estimatedLowCents: number | null;
+  estimatedHighCents: number | null;
+  retailPriceCents: number | null;
+  listPriceCents: number | null;
+  minimumOfferCents: number | null;
+  yardSalePriceCents: number | null;
+  listingTitle: string | null;
 };
 
 export type BoundingBox = {
@@ -55,6 +72,8 @@ export type DetectedItem = {
   seenCount: number;
   duplicate: boolean;
   comparables: Comparable[];
+  editions: ItemEdition[];
+  selectedEditionKey: string | null;
 };
 
 export type HistoryPage = {
