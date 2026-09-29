@@ -5,7 +5,7 @@ import type { AgentRunEvent, AgentRunHistory, AnalysisResponse, DetectedItem, Hi
 import { HISTORY_PAGE_SIZE, HistoryQueryError, historyQuery } from "./history";
 import { agentInstructions, analyzeFrame, buildAgentInputText } from "./agent";
 import { appStats, frameRuns, items, scanSessions } from "./db/schema";
-import { EditionSelectionError, parseEditionSelection, replaceEditions, selectEdition, syncSelectedEdition } from "./editions";
+import { EditionSelectionError, normalizeCandidateEditions, parseEditionSelection, replaceEditions, selectEdition, syncSelectedEdition } from "./editions";
 import { hydrateItems, insertValuationSources } from "./items";
 import { parseScanMode, ScanModeError } from "./mode";
 import { fingerprintSimilarity, normalizeFingerprint } from "./normalize";
@@ -177,7 +177,8 @@ async function analyzeRequest(request: Request, env: Env): Promise<Response> {
       .orderBy(desc(items.lastSeenAt))
       .limit(250);
 
-    for (const candidate of result.analysis.items) {
+    for (const rawCandidate of result.analysis.items) {
+      const candidate = normalizeCandidateEditions(rawCandidate);
       const proposedFingerprint = normalizeFingerprint(candidate.fingerprint || candidate.name);
       if (!proposedFingerprint) continue;
 

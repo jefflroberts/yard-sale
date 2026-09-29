@@ -1,6 +1,6 @@
 import { eq, inArray } from "drizzle-orm";
 import type { drizzle } from "drizzle-orm/d1";
-import { applyEditionPrices, resolveEditionSelection, sortEditions } from "../src/editions";
+import { applyEditionPrices, bestEdition, resolveEditionSelection, sortEditions, type EditionPriceFields } from "../src/editions";
 import type { ItemEdition } from "../src/types";
 import { itemEditions, items } from "./db/schema";
 
@@ -19,6 +19,31 @@ export function parseEditionSelection(body: unknown): string | null {
     throw new EditionSelectionError("selectedEditionKey must be an edition key or null.");
   }
   return key;
+}
+
+const MAX_EDITIONS = 4;
+
+// Cleans agent edition data before anything is saved: unique non-empty keys, at most four editions,
+// comparables pointing only at kept editions, and top-level prices taken from the best edition.
+export function normalizeCandidateEditions<
+  T extends EditionPriceFields & { editions: ItemEdition[]; comparables: Array<{ editionKey: string | null }> },
+>(candidate: T): T {
+  const byKey = new Map<string, ItemEdition>();
+  for (const edition of candidate.editions) {
+    const key = edition.key.trim();
+    if (!key) continue;
+    const existing = byKey.get(key);
+    if (!existing || edition.likelihood > existing.likelihood) byKey.set(key, { ...edition, key });
+  }
+  const editions = sortEditions([...byKey.values()]).slice(0, MAX_EDITIONS);
+  const keptKeys = new Set(editions.map((edition) => edition.key));
+  const comparables = candidate.comparables.map((comparable) => {
+    const key = comparable.editionKey?.trim() ?? null;
+    return { ...comparable, editionKey: key !== null && keptKeys.has(key) ? key : null };
+  });
+  const normalized = { ...candidate, editions, comparables };
+  const best = bestEdition(editions);
+  return best ? applyEditionPrices(normalized, best) : normalized;
 }
 
 export async function replaceEditions(db: WorkerDb, itemId: string, editions: ItemEdition[]): Promise<void> {

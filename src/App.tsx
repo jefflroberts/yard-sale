@@ -1134,6 +1134,10 @@ function ItemDetail({
   const [showEarlierSources, setShowEarlierSources] = useState(false);
 
   useEffect(() => {
+    setShowEarlierSources(false);
+  }, [item.id]);
+
+  useEffect(() => {
     if (!hoveredItemId) return;
     const list = frameListRef.current;
     const matchedItem = frameItemRefs.current.get(hoveredItemId);
@@ -1198,7 +1202,7 @@ function ItemDetail({
               <p className="eyebrow">{item.category} · {Math.round(item.confidence * 100)}% confidence</p>
               <h2>{item.name}</h2>
               <p className="detail-description">{item.description}</p>
-              {item.editions.length > 0 && <EditionPicker key={item.id} item={item} onChange={onChangeEdition} />}
+              {item.editions.length > 1 && <EditionPicker key={item.id} item={item} onChange={onChangeEdition} />}
               {item.mode === "sell" && <SellerPricing item={item} />}
               <div className="detail-values">
                 <div className="price-comparison">
