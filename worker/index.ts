@@ -8,7 +8,7 @@ import { appStats, frameRuns, items, scanSessions } from "./db/schema";
 import { EditionSelectionError, normalizeCandidateEditions, parseEditionSelection, replaceEditions, selectEdition, syncSelectedEdition } from "./editions";
 import { hydrateItems, insertValuationSources } from "./items";
 import { parseScanMode, ScanModeError } from "./mode";
-import { fingerprintSimilarity, normalizeFingerprint } from "./normalize";
+import { findFallbackMatch, normalizeFingerprint } from "./normalize";
 
 const MAX_FRAME_BYTES = 2_500_000;
 
@@ -177,19 +177,17 @@ async function analyzeRequest(request: Request, env: Env): Promise<Response> {
       .orderBy(desc(items.lastSeenAt))
       .limit(250);
 
+    const frameItemIds = new Set<string>();
     for (const rawCandidate of result.analysis.items) {
       const candidate = normalizeCandidateEditions(rawCandidate);
       const proposedFingerprint = normalizeFingerprint(candidate.fingerprint || candidate.name);
       if (!proposedFingerprint) continue;
 
-      const lunaMatch = candidate.previousMatchId
+      // Items in one frame are distinct objects, so none may merge into another saved from this frame.
+      const lunaMatch = candidate.previousMatchId && !frameItemIds.has(candidate.previousMatchId)
         ? knownFingerprints.find((known) => known.id === candidate.previousMatchId)
         : undefined;
-      const fingerprintFallback = knownFingerprints
-        .map((known) => ({ ...known, score: fingerprintSimilarity(proposedFingerprint, known.fingerprint) }))
-        .filter((known) => known.score >= 0.72)
-        .sort((left, right) => right.score - left.score)[0];
-      const previousMatch = lunaMatch ?? fingerprintFallback;
+      const previousMatch = lunaMatch ?? findFallbackMatch(proposedFingerprint, knownFingerprints, frameItemIds);
       const fingerprint = previousMatch?.fingerprint ?? proposedFingerprint;
 
       const proposedId = crypto.randomUUID();
@@ -268,6 +266,7 @@ async function analyzeRequest(request: Request, env: Env): Promise<Response> {
       const id = saved.id;
       const duplicate = proposedId !== id;
       if (!duplicate) knownFingerprints.push({ id, fingerprint });
+      frameItemIds.add(id);
 
       await insertValuationSources(db, id, candidate.comparables, capturedAt);
       await replaceEditions(db, id, candidate.editions);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fingerprintSimilarity, normalizeFingerprint } from "./normalize";
+import { findFallbackMatch, fingerprintSimilarity, normalizeFingerprint } from "./normalize";
 
 describe("normalizeFingerprint", () => {
   it("creates a stable identity without punctuation or irregular whitespace", () => {
@@ -40,5 +40,24 @@ describe("normalizeFingerprint", () => {
     ].join(" ");
 
     expect(fingerprintSimilarity(jonJosef, mintPumps)).toBeGreaterThan(0);
+  });
+});
+
+describe("findFallbackMatch", () => {
+  const known = [
+    { id: "ripper", fingerprint: "powell peralta ripper old school skateboard deck" },
+    { id: "bulldog", fingerprint: "powell peralta frankie hill bulldog deck" },
+  ];
+
+  it("does not merge different products that share most of their words", () => {
+    expect(findFallbackMatch("powell peralta mike vallely elephant old school skateboard deck", known, new Set())).toBeUndefined();
+  });
+
+  it("matches a rescan whose fingerprint only adds or drops descriptive words", () => {
+    expect(findFallbackMatch("powell peralta frankie hill bulldog skateboard deck", known, new Set())?.id).toBe("bulldog");
+  });
+
+  it("never matches an item already saved from the same frame", () => {
+    expect(findFallbackMatch("powell peralta frankie hill bulldog skateboard deck", known, new Set(["bulldog"]))).toBeUndefined();
   });
 });

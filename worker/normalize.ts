@@ -41,6 +41,28 @@ export function fingerprintSimilarity(left: string, right: string): number {
   return containment * 0.65 + jaccard * 0.35;
 }
 
+const FALLBACK_MATCH_THRESHOLD = 0.72;
+
+// Backstop for rescans the agent failed to link. Every token of the shorter fingerprint must appear in
+// the longer one, so "ripper deck" never absorbs "vallely elephant deck" despite a high overlap score.
+export function findFallbackMatch<T extends { id: string; fingerprint: string }>(
+  fingerprint: string,
+  known: T[],
+  excludedIds: Set<string>,
+): T | undefined {
+  const tokens = fingerprintTokens(fingerprint);
+  return known
+    .filter((candidate) => !excludedIds.has(candidate.id))
+    .map((candidate) => ({ candidate, score: fingerprintSimilarity(fingerprint, candidate.fingerprint) }))
+    .filter(({ candidate, score }) => score >= FALLBACK_MATCH_THRESHOLD && tokensNested(tokens, fingerprintTokens(candidate.fingerprint)))
+    .sort((left, right) => right.score - left.score)[0]?.candidate;
+}
+
+function tokensNested(left: Set<string>, right: Set<string>): boolean {
+  const [smaller, larger] = left.size <= right.size ? [left, right] : [right, left];
+  return [...smaller].every((token) => larger.has(token));
+}
+
 function fingerprintTokens(value: string): Set<string> {
   return new Set(
     normalizeFingerprint(value)

@@ -53,3 +53,13 @@ describe("source and edition rules", () => {
     expect(SELL_INSTRUCTIONS).toContain("its own listingTitle naming the release");
   });
 });
+
+describe("colorway rules", () => {
+  it("keeps price-relevant colorways in identity, research, and editions in both modes", () => {
+    for (const instructions of [BUY_INSTRUCTIONS, SELL_INSTRUCTIONS]) {
+      expect(instructions).toContain("Include the colorway or graphic in the fingerprint when it distinguishes");
+      expect(instructions).toContain("different colorway");
+      expect(instructions).toContain("When colorways of the same release sell for meaningfully different prices");
+    }
+  });
+});
