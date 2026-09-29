@@ -23,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { splitEvidence, type MarketEvidence } from "./market-evidence";
 import type { AgentRunHistory, AnalysisResponse, DetectedItem, HistoryPage, ScanMode, Stats } from "./types";
 
 const EMPTY_STATS: Stats = {
@@ -1092,7 +1093,8 @@ function ItemDetail({
   const frameListRef = useRef<HTMLDivElement>(null);
   const frameItemRefs = useRef(new Map<string, HTMLButtonElement>());
   const highlightedItemId = hoveredItemId ?? item.id;
-  const marketEvidence = collectMarketEvidence(item);
+  const evidence = splitEvidence(item);
+  const [showEarlierSources, setShowEarlierSources] = useState(false);
 
   useEffect(() => {
     if (!hoveredItemId) return;
@@ -1171,8 +1173,18 @@ function ItemDetail({
                     <strong>{item.retailPriceCents === null ? "—" : money(item.retailPriceCents, item.currency)}</strong>
                   </div>
                 </div>
-                <p>{item.valueSummary}</p>
               </div>
+              <section className="comparables">
+                <h3>Where these prices come from</h3>
+                {item.valueSummary && <p className="comparables-summary">{item.valueSummary}</p>}
+                {evidence.latest.map((entry, index) => <EvidenceRow key={`latest-${entry.title}-${index}`} entry={entry} />)}
+                {evidence.earlier.length > 0 && (
+                  <button type="button" className="earlier-sources-toggle" data-export-exclude onClick={() => setShowEarlierSources((open) => !open)}>
+                    {showEarlierSources ? "Hide" : "Show"} {evidence.earlier.length} source{evidence.earlier.length === 1 ? "" : "s"} from earlier scans
+                  </button>
+                )}
+                {showEarlierSources && evidence.earlier.map((entry, index) => <EvidenceRow key={`earlier-${entry.title}-${index}`} entry={entry} />)}
+              </section>
               <a
                 className="lens-search-link"
                 data-export-exclude
@@ -1182,26 +1194,6 @@ function ItemDetail({
               >
                 <Search size={17} /> Search full frame with Google Lens <ExternalLink size={15} />
               </a>
-              {marketEvidence.length > 0 && (
-                <section className="comparables">
-                  <h3>Sold comps & web results</h3>
-                  {marketEvidence.map((comparable, index) => {
-                    const content = (
-                      <>
-                        <span className={`comp-type ${comparable.type}`}>{comparable.type}</span>
-                        <span>{comparable.title}</span>
-                        <strong>{comparable.priceCents === null ? "—" : money(comparable.priceCents, comparable.currency)}</strong>
-                        {comparable.url && <ExternalLink size={15} />}
-                      </>
-                    );
-                    return comparable.url ? (
-                      <a key={`${comparable.title}-${index}`} href={comparable.url} target="_blank" rel="noreferrer">{content}</a>
-                    ) : (
-                      <div key={`${comparable.title}-${index}`}>{content}</div>
-                    );
-                  })}
-                </section>
-              )}
               <dl className="facts">
                 <div><dt>Brand</dt><dd>{item.brand ?? "Unknown"}</dd></div>
                 <div><dt>Model</dt><dd>{item.model ?? "Unknown"}</dd></div>
@@ -1392,31 +1384,25 @@ function AnnotatedImage({
   );
 }
 
+function EvidenceRow({ entry }: { entry: MarketEvidence }) {
+  const content = (
+    <>
+      <span className={`comp-type ${entry.type}`}>{entry.type}</span>
+      <span className="comp-title">{entry.title}</span>
+      <strong>{entry.priceCents === null ? "—" : money(entry.priceCents, entry.currency)}</strong>
+      {entry.url ? <ExternalLink size={15} /> : <span />}
+      {entry.note && <small className="comp-note">{entry.note}</small>}
+    </>
+  );
+  return entry.url ? <a href={entry.url} target="_blank" rel="noreferrer">{content}</a> : <div>{content}</div>;
+}
+
 function formatRange(item: DetectedItem): string {
   if (item.estimatedLowCents === null && item.estimatedHighCents === null) return "Value pending";
   if (item.estimatedLowCents === item.estimatedHighCents || item.estimatedHighCents === null) {
     return money(item.estimatedLowCents ?? item.estimatedHighCents ?? 0, item.currency);
   }
   return `${money(item.estimatedLowCents ?? 0, item.currency)}–${money(item.estimatedHighCents, item.currency)}`;
-}
-
-function collectMarketEvidence(item: DetectedItem) {
-  const evidence: Array<{
-    title: string;
-    url: string | null;
-    priceCents: number | null;
-    currency: string;
-    type: "retail" | "active" | "sold" | "web";
-  }> = item.comparables.map((comparable) => ({ ...comparable }));
-  const knownUrls = new Set(evidence.map((entry) => entry.url).filter(Boolean));
-  const markdownLink = /\[([^\]]+)]\((https?:\/\/[^)]+)\)/g;
-  for (const match of item.valueSummary.matchAll(markdownLink)) {
-    const [, title, url] = match;
-    if (!url || knownUrls.has(url)) continue;
-    evidence.push({ title: title || "Web result", url, priceCents: null, currency: item.currency, type: "web" });
-    knownUrls.add(url);
-  }
-  return evidence;
 }
 
 function SellerPricing({ item }: { item: DetectedItem }) {
