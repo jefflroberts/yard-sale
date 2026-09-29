@@ -1,10 +1,11 @@
 import { Buffer } from "node:buffer";
-import { desc, eq, inArray, sql } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
-import type { AgentRunEvent, AgentRunHistory, AnalysisResponse, Comparable, DetectedItem, HistoryPage, Stats } from "../src/types";
+import type { AgentRunEvent, AgentRunHistory, AnalysisResponse, DetectedItem, HistoryPage, Stats } from "../src/types";
 import { HISTORY_PAGE_SIZE, HistoryQueryError, historyQuery } from "./history";
 import { agentInstructions, analyzeFrame, buildAgentInputText } from "./agent";
 import { appStats, frameRuns, items, scanSessions, valuationSources } from "./db/schema";
+import { hydrateItems } from "./items";
 import { parseScanMode, ScanModeError } from "./mode";
 import { fingerprintSimilarity, normalizeFingerprint } from "./normalize";
 
@@ -409,7 +410,7 @@ async function getItems(env: Env, params: URLSearchParams): Promise<HistoryPage>
   const page = rows.slice(0, HISTORY_PAGE_SIZE);
   const last = page.at(-1);
   return {
-    items: await hydrateItems(env, page),
+    items: await hydrateItems(db, page),
     nextCursor: rows.length > HISTORY_PAGE_SIZE && last
       ? JSON.stringify({ lastSeenAt: last.lastSeenAt, id: last.id })
       : null,
@@ -469,7 +470,7 @@ async function getFrameItems(env: Env, itemId: string): Promise<DetectedItem[]> 
     .from(items)
     .where(eq(items.thumbnailKey, selected.thumbnailKey))
     .orderBy(desc(items.lastSeenAt));
-  return hydrateItems(env, rows);
+  return hydrateItems(db, rows);
 }
 
 async function getAgentRunForItem(env: Env, itemId: string): Promise<AgentRunHistory> {
@@ -513,70 +514,6 @@ async function getAgentRunForItem(env: Env, itemId: string): Promise<AgentRunHis
     output: parseJson(run.outputJson, null),
     usage: parseJson(run.usageJson, null),
   };
-}
-
-async function hydrateItems(env: Env, rows: Array<typeof items.$inferSelect>): Promise<DetectedItem[]> {
-  const db = drizzle(env.DB);
-  const ids = rows.map((row) => row.id);
-  const sources =
-    ids.length === 0
-      ? []
-      : await db
-          .select()
-          .from(valuationSources)
-          .where(inArray(valuationSources.itemId, ids))
-          .orderBy(desc(valuationSources.capturedAt));
-  const sourceMap = new Map<string, Comparable[]>();
-  for (const source of sources) {
-    const comparables = sourceMap.get(source.itemId) ?? [];
-    if (comparables.length < 8) {
-      comparables.push({
-        title: source.title,
-        url: source.url,
-        priceCents: source.priceCents,
-        currency: source.currency,
-        type: source.sourceType,
-      });
-      sourceMap.set(source.itemId, comparables);
-    }
-  }
-
-  return rows.map((row) => ({
-    id: row.id,
-    scanSessionId: row.scanSessionId,
-    fingerprint: row.fingerprint,
-    name: row.name,
-    category: row.category,
-    brand: row.brand,
-    model: row.model,
-    description: row.description,
-    condition: row.condition,
-    confidence: row.confidence,
-    observedPriceCents: row.observedPriceCents,
-    currency: row.currency,
-    estimatedLowCents: row.estimatedLowCents,
-    estimatedHighCents: row.estimatedHighCents,
-    retailPriceCents: row.retailPriceCents,
-    activePriceCents: row.activePriceCents,
-    soldPriceCents: row.soldPriceCents,
-    mode: row.mode,
-    listPriceCents: row.listPriceCents,
-    minimumOfferCents: row.minimumOfferCents,
-    yardSalePriceCents: row.yardSalePriceCents,
-    listingTitle: row.listingTitle,
-    listingDescription: row.listingDescription,
-    valueSummary: row.valueSummary,
-    thumbnailUrl: `/api/thumbnails/${row.thumbnailKey}`,
-    boundingBox:
-      row.boxXMin === null || row.boxYMin === null || row.boxXMax === null || row.boxYMax === null
-        ? null
-        : { xMin: row.boxXMin, yMin: row.boxYMin, xMax: row.boxXMax, yMax: row.boxYMax },
-    firstSeenAt: row.firstSeenAt,
-    lastSeenAt: row.lastSeenAt,
-    seenCount: row.seenCount,
-    duplicate: row.seenCount > 1,
-    comparables: sourceMap.get(row.id) ?? [],
-  }));
 }
 
 async function serveThumbnail(url: URL, env: Env): Promise<Response> {
