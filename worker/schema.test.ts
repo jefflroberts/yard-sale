@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
+import { itemEditions, items } from "./db/schema";
 import { createTestDb, insertTestItem } from "./test/sqlite-d1";
 
 let context: ReturnType<typeof createTestDb>;
-afterEach(() => context.sqlite.close());
+afterEach(() => context?.sqlite.close());
 
 describe("migration 0005", () => {
   it("adds item editions that are unique per item key and cascade with their item", () => {
@@ -26,5 +28,19 @@ describe("migration 0005", () => {
       VALUES ('s1', 'deck', 'sold', 'Old source', '2026-09-29T12:00:00Z')`);
     expect(sqlite.prepare("SELECT note, edition_key FROM valuation_sources").get()).toEqual({ note: null, edition_key: null });
     expect(sqlite.prepare("SELECT selected_edition_key FROM items").get()).toEqual({ selected_edition_key: null });
+  });
+});
+
+describe("sqlite d1 harness", () => {
+  it("returns positional rows so joined duplicate column names stay distinct", async () => {
+    context = createTestDb();
+    const { sqlite, db } = context;
+    insertTestItem(sqlite, "deck");
+    sqlite.exec("INSERT INTO item_editions (id, item_id, key, label, identification_tips, likelihood) VALUES ('e1', 'deck', 'original', 'L', 'T', 0.5)");
+    const rows = await db
+      .select({ itemId: items.id, editionId: itemEditions.id, key: itemEditions.key })
+      .from(items)
+      .innerJoin(itemEditions, eq(itemEditions.itemId, items.id));
+    expect(rows).toEqual([{ itemId: "deck", editionId: "e1", key: "original" }]);
   });
 });

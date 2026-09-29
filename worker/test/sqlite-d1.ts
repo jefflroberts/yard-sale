@@ -14,7 +14,12 @@ function sqliteD1(sqlite: DatabaseSync): D1Database {
       return {
         bind: (...next: unknown[]) => bound(next as SQLInputValue[]),
         all: async () => ({ results: statement().all(...params), success: true, meta: {} }),
-        raw: async () => statement().all(...params).map((row) => Object.values(row)),
+        raw: async () => {
+          // Positional arrays like real D1; object rows would collapse duplicate column names in joins.
+          const prepared = statement();
+          prepared.setReturnArrays(true);
+          return prepared.all(...params);
+        },
         first: async () => statement().get(...params) ?? null,
         run: async () => {
           const result = statement().run(...params);
