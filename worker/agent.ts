@@ -13,6 +13,22 @@ const comparableSchema = z.object({
   priceCents: z.number().int().nonnegative().nullable(),
   currency: z.string(),
   type: z.enum(["retail", "active", "sold"]),
+  note: z.string().describe("One line under 120 characters: what this source is and how it influenced the price."),
+  editionKey: z.string().nullable().describe("Key of the edition this source is evidence for; null when it applies generally."),
+});
+
+const editionSchema = z.object({
+  key: z.string().describe("Stable lowercase slug for this release, e.g. original-1988 or reissue."),
+  label: z.string().describe("Human label, e.g. Original 1988 pressing."),
+  identificationTips: z.string().describe("What to physically check to tell this release apart from the others."),
+  likelihood: z.number().min(0).max(1).describe("Probability that the photographed item is this release."),
+  estimatedLowCents: z.number().int().nonnegative().nullable(),
+  estimatedHighCents: z.number().int().nonnegative().nullable(),
+  retailPriceCents: z.number().int().nonnegative().nullable(),
+  listPriceCents: z.number().int().nonnegative().nullable().describe("Sell mode only."),
+  minimumOfferCents: z.number().int().nonnegative().nullable().describe("Sell mode only."),
+  yardSalePriceCents: z.number().int().nonnegative().nullable().describe("Sell mode only."),
+  listingTitle: z.string().nullable().describe("Sell mode only: Marketplace title naming this release."),
 });
 
 const boundingBoxSchema = z.object({
@@ -48,7 +64,8 @@ const detectedItemSchema = z.object({
     .string()
     .nullable()
     .describe("The saved candidate ID when this is the same previously scanned item; otherwise null."),
-  comparables: z.array(comparableSchema).max(8),
+  comparables: z.array(comparableSchema).max(12),
+  editions: z.array(editionSchema).max(4).describe("Separate releases of this product; empty when it had a single release."),
   listPriceCents: z.number().int().nonnegative().nullable().describe("Sell mode only: Facebook Marketplace asking price."),
   minimumOfferCents: z.number().int().nonnegative().nullable().describe("Sell mode only: lowest Marketplace offer worth accepting."),
   yardSalePriceCents: z.number().int().nonnegative().nullable().describe("Sell mode only: yard-sale sticker price."),
@@ -92,8 +109,9 @@ const RESEARCH_STEPS = `1. Return one tight bounding box around the entire item.
 4. Research the open web and eBay in parallel when the identity is specific enough. For web search, prioritize the manufacturer, major stores, and specialist retailers to confirm the product identity and establish the primary current retail-price baseline. Also seek credible recent sold evidence when available.
 5. Use search_ebay_active_listings concurrently as secondary market evidence. Do not wait for web research to finish before starting the eBay search, but do not use eBay as the primary retail-price baseline. An active eBay asking price is never a completed sale.
 6. Set retailPriceCents to the current new-retail price when supported by manufacturer or store evidence. If the exact product is discontinued, estimate its current equivalent replacement value from closely comparable retail products. Use null only when there is not enough evidence for a defensible retail estimate.
-7. Return integer prices in cents. Use null when evidence is insufficient. Include concise source titles and URLs in comparables. eBay comparables must be type "active".
-8. Estimate a conservative resale range that reflects the visible condition and uncertainty.`;
+7. Return integer prices in cents. Use null when evidence is insufficient. Include up to 12 comparables with concise source titles and URLs, preferring sold evidence over active listings whenever it exists. eBay comparables must be type "active" and must carry the listing price the tool returned. Every comparable must be the same product and release as the item; when you rely on a near substitute, say so in its note (for example "Series 10, not an exact match; used as a ceiling"). Give every comparable a one-line note under 120 characters stating what it is and how it influenced the price (for example "Sold Aug 2026, same model, heavy wear; anchors the low end").
+8. Estimate a conservative resale range that reflects the visible condition and uncertainty.
+   When the product was released more than once (original, reissue, re-release, reproduction, anniversary edition, remaster, or similar), research each release separately and return up to 4 editions. Never blend releases into a single price. Give each edition a stable lowercase key, a label, identification tips describing what to physically check (copyright dates, country of manufacture, maker's marks, serial formats), a likelihood that the photographed item is that release based on visible evidence, and its own prices. Set a comparable's editionKey to the edition it is evidence for, otherwise null. The item's top-level price fields must equal the edition with the highest likelihood. Return an empty editions array when the product had a single release.`;
 
 export const BUY_INSTRUCTIONS = `You inspect a single frame from a thrift-store or garage-sale scan.
 
@@ -114,7 +132,7 @@ Never return:
 
 Apply these inclusion rules before calling tools or searching the web. Do not invent details hidden by the frame. Read price tags when possible. For each included item:
 ${RESEARCH_STEPS}
-9. Set listPriceCents, minimumOfferCents, yardSalePriceCents, listingTitle, and listingDescription to null.
+9. Set listPriceCents, minimumOfferCents, yardSalePriceCents, listingTitle, and listingDescription to null, on the item and on every edition.
 
 Return an empty items array when no object passes every inclusion rule. Currency defaults to USD unless a visible tag or source clearly indicates otherwise.`;
 
@@ -141,6 +159,7 @@ ${RESEARCH_STEPS}
    - minimumOfferCents: the lowest Marketplace offer worth accepting; never above listPriceCents.
    - yardSalePriceCents: a sticker price that sells the same morning at a yard sale, typically 25–50% of the Marketplace price, never above minimumOfferCents. Round to $0.25 or $0.50 under $5 and to whole dollars above that.
    Use null only when there is no defensible basis for a price.
+   Price every edition the same way, and give each edition its own listingTitle naming the release (for example “Original 1988” or “Reissue”).
 10. listingTitle: a searchable Marketplace title under 80 characters with brand, model, item type, and a key attribute such as size or edition. No emoji, all caps, or hype.
 11. listingDescription: 2–4 plain sentences covering what the item is, key specs, and its visible condition. Mention flaws you can see. Do not claim anything you cannot verify from the photo, such as “works perfectly” or “smoke-free home,” and do not include a price.
 

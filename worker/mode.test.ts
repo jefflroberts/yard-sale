@@ -36,3 +36,20 @@ describe("buildAgentInputText", () => {
     expect(buildAgentInputText("books only", "sell")).toContain("<find_criteria>\nbooks only\n</find_criteria>");
   });
 });
+
+describe("source and edition rules", () => {
+  it("asks both modes for annotated sources and separate edition pricing", () => {
+    for (const instructions of [BUY_INSTRUCTIONS, SELL_INSTRUCTIONS]) {
+      expect(instructions).toContain("one-line note");
+      expect(instructions).toContain("near substitute");
+      expect(instructions).toContain("Never blend releases");
+      expect(instructions).toContain("reissue");
+      expect(instructions).toContain("editionKey");
+    }
+  });
+
+  it("nulls sell-only edition fields in buy mode and titles each edition in sell mode", () => {
+    expect(BUY_INSTRUCTIONS).toContain("on the item and on every edition");
+    expect(SELL_INSTRUCTIONS).toContain("its own listingTitle naming the release");
+  });
+});
