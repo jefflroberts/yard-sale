@@ -37,13 +37,31 @@ export function sanitizePrices<T extends PriceFields>(prices: T, evidence: Price
   const retail = result.retailPriceCents;
   const soldAboveRetail = retail !== null && evidence.some((source) => source.type === "sold" && (source.priceCents ?? 0) > retail);
   if (retail !== null && !soldAboveRetail) {
+    // Scale the prices below a capped one by the same factor so the negotiating spread survives.
+    const listFactor = capFactor(result.listPriceCents, retail);
     result.listPriceCents = capAt(result.listPriceCents, retail);
+    result.minimumOfferCents = scalePrice(result.minimumOfferCents, listFactor);
+    result.yardSalePriceCents = scalePrice(result.yardSalePriceCents, listFactor);
+    const rangeFactor = capFactor(result.estimatedHighCents, retail);
     result.estimatedHighCents = capAt(result.estimatedHighCents, retail);
+    result.estimatedLowCents = scalePrice(result.estimatedLowCents, rangeFactor);
   }
   result.estimatedLowCents = capAt(result.estimatedLowCents, result.estimatedHighCents);
   result.minimumOfferCents = capAt(result.minimumOfferCents, result.listPriceCents);
   result.yardSalePriceCents = capAt(result.yardSalePriceCents, result.minimumOfferCents ?? result.listPriceCents);
   return result;
+}
+
+function capFactor(value: number | null, ceiling: number): number {
+  return value === null || value <= ceiling ? 1 : ceiling / value;
+}
+
+// Whole dollars from $5 up, quarters below, matching how the agent is told to round sale prices.
+function scalePrice(value: number | null, factor: number): number | null {
+  if (value === null || factor === 1) return value;
+  const scaled = value * factor;
+  const step = scaled >= 500 ? 100 : 25;
+  return Math.round(scaled / step) * step;
 }
 
 function capAt(value: number | null, ceiling: number | null): number | null {

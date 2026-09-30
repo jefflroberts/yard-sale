@@ -157,10 +157,21 @@ describe("sanitizePrices", () => {
   const sold = (priceCents: number | null) => ({ type: "sold" as const, priceCents });
   const active = (priceCents: number | null) => ({ type: "active" as const, priceCents });
 
-  it("caps prices at new retail when no sold listing beats it, keeping the order", () => {
+  it("caps prices at new retail when no sold listing beats it, scaling the lower prices to keep their spacing", () => {
     expect(sanitizePrices(prices, [active(18899), sold(7000)])).toEqual({
-      estimatedLowCents: 7995, estimatedHighCents: 7995, retailPriceCents: 7995,
-      listPriceCents: 7995, minimumOfferCents: 7995, yardSalePriceCents: 6000,
+      estimatedLowCents: 5100, estimatedHighCents: 7995, retailPriceCents: 7995,
+      listPriceCents: 7995, minimumOfferCents: 6800, yardSalePriceCents: 3700,
+    });
+  });
+
+  it("rounds scaled prices under $5 to the nearest quarter", () => {
+    const toyCar = {
+      estimatedLowCents: 200, estimatedHighCents: 500, retailPriceCents: 125,
+      listPriceCents: 500, minimumOfferCents: 300, yardSalePriceCents: 200,
+    };
+    expect(sanitizePrices(toyCar, [])).toEqual({
+      estimatedLowCents: 50, estimatedHighCents: 125, retailPriceCents: 125,
+      listPriceCents: 125, minimumOfferCents: 75, yardSalePriceCents: 50,
     });
   });
 
@@ -209,6 +220,6 @@ describe("normalizeCandidateEditions price checks", () => {
       estimatedLowCents: 9000, estimatedHighCents: 14000, retailPriceCents: 7995, listPriceCents: 13000,
       minimumOfferCents: 11000, yardSalePriceCents: 50, listingTitle: null, editions: [], comparables: [],
     });
-    expect(result).toMatchObject({ listPriceCents: 7995, minimumOfferCents: 7995, yardSalePriceCents: null });
+    expect(result).toMatchObject({ listPriceCents: 7995, minimumOfferCents: 6800, yardSalePriceCents: null });
   });
 });
