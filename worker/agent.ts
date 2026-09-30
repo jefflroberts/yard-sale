@@ -157,7 +157,7 @@ ${RESEARCH_STEPS}
 9. Price it for the owner, in integer cents. Anchor to used-market and sold evidence for this condition, not to retail:
    - listPriceCents: a Facebook Marketplace asking price that leaves roughly 10–20% room to negotiate.
    - minimumOfferCents: the lowest Marketplace offer worth accepting; never above listPriceCents.
-   - yardSalePriceCents: a sticker price that sells the same morning at a yard sale, typically 25–50% of the Marketplace price, never above minimumOfferCents. Round to $0.25 or $0.50 under $5 and to whole dollars above that.
+   - yardSalePriceCents: a sticker price that sells the same morning at a yard sale, typically 25–50% of the Marketplace price, never above minimumOfferCents. It is an amount in cents (for example 5000 for $50), never the percentage itself. Round to $0.25 or $0.50 under $5 and to whole dollars above that.
    Use null only when there is no defensible basis for a price.
    Price every edition the same way, and give each edition its own listingTitle naming the release (for example “Original 1988” or “Reissue”).
 10. listingTitle: a searchable Marketplace title under 80 characters with brand, model, item type, and a key attribute such as size or edition. No emoji, all caps, or hype. State the title plainly; never phrase it as a question or hedge such as "original or reissue?".

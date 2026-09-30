@@ -75,5 +75,6 @@ describe("edition price anchoring", () => {
 
   it("writes listing titles as plain statements", () => {
     expect(SELL_INSTRUCTIONS).toContain("State the title plainly");
+    expect(SELL_INSTRUCTIONS).toContain("never the percentage itself");
   });
 });

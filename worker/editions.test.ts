@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ItemEdition } from "../src/types";
-import { EditionSelectionError, loadEditions, normalizeCandidateEditions, parseEditionSelection, replaceEditions, selectEdition, syncSelectedEdition } from "./editions";
+import { EditionSelectionError, loadEditions, normalizeCandidateEditions, sanitizePrices, parseEditionSelection, replaceEditions, selectEdition, syncSelectedEdition } from "./editions";
 import { createTestDb, insertTestItem } from "./test/sqlite-d1";
 
 function edition(key: string, likelihood: number, listPriceCents: number, listingTitle: string | null = `${key} title`): ItemEdition {
@@ -106,13 +106,13 @@ describe("syncSelectedEdition (rescan)", () => {
 
 describe("normalizeCandidateEditions", () => {
   const base = {
-    estimatedLowCents: 1, estimatedHighCents: 2, retailPriceCents: 3, listPriceCents: 4, minimumOfferCents: 5,
-    yardSalePriceCents: 6, listingTitle: "Original title",
+    estimatedLowCents: 100, estimatedHighCents: 200, retailPriceCents: null, listPriceCents: 400, minimumOfferCents: 300,
+    yardSalePriceCents: 100, listingTitle: "Original title",
   };
   const candidate = (editions: ItemEdition[], editionKeys: Array<string | null> = []) => ({
     ...base,
     editions,
-    comparables: editionKeys.map((editionKey) => ({ title: "c", editionKey })),
+    comparables: editionKeys.map((editionKey) => ({ title: "c", editionKey, type: "active" as const, priceCents: null })),
   });
 
   it("trims keys, drops empty keys, and dedupes by highest likelihood", () => {
@@ -146,5 +146,69 @@ describe("normalizeCandidateEditions", () => {
     expect(result).toMatchObject({
       estimatedLowCents: 200, estimatedHighCents: 400, listPriceCents: 400, minimumOfferCents: 300, yardSalePriceCents: 100, listingTitle: "high title",
     });
+  });
+});
+
+describe("sanitizePrices", () => {
+  const prices = {
+    estimatedLowCents: 9000, estimatedHighCents: 14000, retailPriceCents: 7995,
+    listPriceCents: 13000, minimumOfferCents: 11000, yardSalePriceCents: 6000,
+  };
+  const sold = (priceCents: number | null) => ({ type: "sold" as const, priceCents });
+  const active = (priceCents: number | null) => ({ type: "active" as const, priceCents });
+
+  it("caps prices at new retail when no sold listing beats it, keeping the order", () => {
+    expect(sanitizePrices(prices, [active(18899), sold(7000)])).toEqual({
+      estimatedLowCents: 7995, estimatedHighCents: 7995, retailPriceCents: 7995,
+      listPriceCents: 7995, minimumOfferCents: 7995, yardSalePriceCents: 6000,
+    });
+  });
+
+  it("keeps prices above retail when a sold listing supports them", () => {
+    expect(sanitizePrices(prices, [sold(15000)])).toEqual(prices);
+  });
+
+  it("blanks a yard-sale price under 10% of the Marketplace price as a unit error", () => {
+    expect(sanitizePrices({ ...prices, retailPriceCents: null, yardSalePriceCents: 50 }, []).yardSalePriceCents).toBeNull();
+  });
+
+  it("keeps lowest offer and yard sale at or below the price above them", () => {
+    expect(sanitizePrices({ ...prices, retailPriceCents: null, minimumOfferCents: 20000, yardSalePriceCents: 25000 }, [])).toMatchObject({
+      listPriceCents: 13000, minimumOfferCents: 13000, yardSalePriceCents: 13000,
+    });
+  });
+
+  it("leaves missing prices alone", () => {
+    const empty = {
+      estimatedLowCents: null, estimatedHighCents: null, retailPriceCents: 7995,
+      listPriceCents: null, minimumOfferCents: null, yardSalePriceCents: null,
+    };
+    expect(sanitizePrices(empty, [])).toEqual(empty);
+  });
+});
+
+describe("normalizeCandidateEditions price checks", () => {
+  it("checks each edition against its own sold evidence and general sources", () => {
+    const reissue = { ...edition("reissue", 0.8, 13000), retailPriceCents: 7995, yardSalePriceCents: 50 };
+    const original = { ...edition("original", 0.2, 45000), retailPriceCents: 30000 };
+    const result = normalizeCandidateEditions({
+      estimatedLowCents: null, estimatedHighCents: null, retailPriceCents: null, listPriceCents: null,
+      minimumOfferCents: null, yardSalePriceCents: null, listingTitle: null,
+      editions: [reissue, original],
+      comparables: [{ editionKey: "original", type: "sold" as const, priceCents: 100000 }],
+    });
+    expect(result.editions.map((e) => [e.key, e.listPriceCents, e.yardSalePriceCents])).toEqual([
+      ["reissue", 7995, null],
+      ["original", 45000, 11250],
+    ]);
+    expect(result).toMatchObject({ listPriceCents: 7995, yardSalePriceCents: null });
+  });
+
+  it("checks top-level prices when there are no editions", () => {
+    const result = normalizeCandidateEditions({
+      estimatedLowCents: 9000, estimatedHighCents: 14000, retailPriceCents: 7995, listPriceCents: 13000,
+      minimumOfferCents: 11000, yardSalePriceCents: 50, listingTitle: null, editions: [], comparables: [],
+    });
+    expect(result).toMatchObject({ listPriceCents: 7995, minimumOfferCents: 7995, yardSalePriceCents: null });
   });
 });

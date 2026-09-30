@@ -23,10 +23,40 @@ export function parseEditionSelection(body: unknown): string | null {
 
 const MAX_EDITIONS = 4;
 
+type PriceFields = Omit<EditionPriceFields, "listingTitle">;
+type PriceEvidence = { type: "retail" | "active" | "sold"; priceCents: number | null };
+
+// The agent does not reliably follow pricing rules, so enforce the ones a bad price would break:
+// a yard-sale value far below the Marketplace price is a unit error (e.g. "50" meaning 50%), nothing
+// is priced above new retail unless a sold listing beats retail, and the three sale prices stay ordered.
+export function sanitizePrices<T extends PriceFields>(prices: T, evidence: PriceEvidence[]): T {
+  const result = { ...prices };
+  if (result.yardSalePriceCents !== null && result.listPriceCents !== null && result.yardSalePriceCents * 10 < result.listPriceCents) {
+    result.yardSalePriceCents = null;
+  }
+  const retail = result.retailPriceCents;
+  const soldAboveRetail = retail !== null && evidence.some((source) => source.type === "sold" && (source.priceCents ?? 0) > retail);
+  if (retail !== null && !soldAboveRetail) {
+    result.listPriceCents = capAt(result.listPriceCents, retail);
+    result.estimatedHighCents = capAt(result.estimatedHighCents, retail);
+  }
+  result.estimatedLowCents = capAt(result.estimatedLowCents, result.estimatedHighCents);
+  result.minimumOfferCents = capAt(result.minimumOfferCents, result.listPriceCents);
+  result.yardSalePriceCents = capAt(result.yardSalePriceCents, result.minimumOfferCents ?? result.listPriceCents);
+  return result;
+}
+
+function capAt(value: number | null, ceiling: number | null): number | null {
+  return value === null || ceiling === null ? value : Math.min(value, ceiling);
+}
+
 // Cleans agent edition data before anything is saved: unique non-empty keys, at most four editions,
-// comparables pointing only at kept editions, and top-level prices taken from the best edition.
+// comparables pointing only at kept editions, sanitized prices, and top-level prices from the best edition.
 export function normalizeCandidateEditions<
-  T extends EditionPriceFields & { editions: ItemEdition[]; comparables: Array<{ editionKey: string | null }> },
+  T extends EditionPriceFields & {
+    editions: ItemEdition[];
+    comparables: Array<PriceEvidence & { editionKey: string | null }>;
+  },
 >(candidate: T): T {
   const byKey = new Map<string, ItemEdition>();
   for (const edition of candidate.editions) {
@@ -35,15 +65,18 @@ export function normalizeCandidateEditions<
     const existing = byKey.get(key);
     if (!existing || edition.likelihood > existing.likelihood) byKey.set(key, { ...edition, key });
   }
-  const editions = sortEditions([...byKey.values()]).slice(0, MAX_EDITIONS);
-  const keptKeys = new Set(editions.map((edition) => edition.key));
+  const keptEditions = sortEditions([...byKey.values()]).slice(0, MAX_EDITIONS);
+  const keptKeys = new Set(keptEditions.map((edition) => edition.key));
   const comparables = candidate.comparables.map((comparable) => {
     const key = comparable.editionKey?.trim() ?? null;
     return { ...comparable, editionKey: key !== null && keptKeys.has(key) ? key : null };
   });
-  const normalized = { ...candidate, editions, comparables };
+  const editions = keptEditions.map((edition) =>
+    sanitizePrices(edition, comparables.filter((comparable) => comparable.editionKey === null || comparable.editionKey === edition.key)),
+  );
   const best = bestEdition(editions);
-  return best ? applyEditionPrices(normalized, best) : normalized;
+  const normalized = { ...candidate, editions, comparables };
+  return best ? applyEditionPrices(normalized, best) : sanitizePrices(normalized, comparables);
 }
 
 export async function replaceEditions(db: WorkerDb, itemId: string, editions: ItemEdition[]): Promise<void> {
