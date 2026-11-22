@@ -23,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { apiFetch } from "./api";
 import { activeEditionKey, withEditionSelection } from "./editions";
 import { splitEvidence, type MarketEvidence } from "./market-evidence";
 import type { AgentRunHistory, AnalysisResponse, DetectedItem, HistoryPage, ScanMode, Stats } from "./types";
@@ -52,7 +53,7 @@ type Source = "camera" | "video" | "image";
 type HistoryModeFilter = ScanMode | "all";
 
 async function fetchStats(): Promise<Stats> {
-  const response = await fetch("/api/stats");
+  const response = await apiFetch("/api/stats");
   if (!response.ok) throw new Error("Could not load processing statistics.");
   return response.json();
 }
@@ -66,7 +67,7 @@ async function fetchItems(
   const params = new URLSearchParams({ q: search });
   if (mode !== "all") params.set("mode", mode);
   if (cursor) params.set("cursor", cursor);
-  const response = await fetch(`/api/items?${params}`, { signal });
+  const response = await apiFetch(`/api/items?${params}`, { signal });
   if (!response.ok) throw new Error("Could not load saved finds.");
   return response.json();
 }
@@ -82,30 +83,30 @@ function useHistory(search: string, enabled: boolean, mode: HistoryModeFilter = 
 }
 
 async function fetchFrameItems(itemId: string): Promise<DetectedItem[]> {
-  const response = await fetch(`/api/items/${encodeURIComponent(itemId)}`);
+  const response = await apiFetch(`/api/items/${encodeURIComponent(itemId)}`);
   if (!response.ok) throw new Error("Could not load this find.");
   return response.json();
 }
 
 async function fetchAgentRun(itemId: string): Promise<AgentRunHistory> {
-  const response = await fetch(`/api/agent-runs/by-item/${encodeURIComponent(itemId)}`);
+  const response = await apiFetch(`/api/agent-runs/by-item/${encodeURIComponent(itemId)}`);
   const body = (await response.json()) as AgentRunHistory | { error?: string };
   if (!response.ok) throw new Error("error" in body && body.error ? body.error : "Could not load agent activity.");
   return body as AgentRunHistory;
 }
 
 async function deleteFindRequest(itemId: string): Promise<void> {
-  const response = await fetch(`/api/items/${encodeURIComponent(itemId)}`, { method: "DELETE" });
+  const response = await apiFetch(`/api/items/${encodeURIComponent(itemId)}`, { method: "DELETE" });
   if (!response.ok) throw new Error("Could not delete this find.");
 }
 
 async function deleteAllFindsRequest(): Promise<void> {
-  const response = await fetch("/api/items", { method: "DELETE" });
+  const response = await apiFetch("/api/items", { method: "DELETE" });
   if (!response.ok) throw new Error("Could not delete all finds.");
 }
 
 async function selectEditionRequest(itemId: string, selectedEditionKey: string | null): Promise<DetectedItem> {
-  const response = await fetch(`/api/items/${encodeURIComponent(itemId)}`, {
+  const response = await apiFetch(`/api/items/${encodeURIComponent(itemId)}`, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ selectedEditionKey }),
@@ -346,7 +347,7 @@ export default function App({ children }: { children?: React.ReactNode }) {
         form.set("findCriteria", findCriteriaRef.current);
         form.set("mode", scanModeRef.current);
         form.set("image", blob, "frame.jpg");
-        const response = await fetch("/api/analyze", { method: "POST", body: form });
+        const response = await apiFetch("/api/analyze", { method: "POST", body: form });
         const body = (await response.json()) as AnalysisResponse | { error?: string };
         if (!response.ok) throw new Error("error" in body ? body.error : "Frame analysis failed");
 
@@ -394,7 +395,7 @@ export default function App({ children }: { children?: React.ReactNode }) {
   const beginSession = useCallback(
     async (nextSource: Source, sourceName?: string) => {
       const id = crypto.randomUUID();
-      const response = await fetch("/api/sessions", {
+      const response = await apiFetch("/api/sessions", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ id, sourceType: nextSource, sourceName }),
