@@ -26,6 +26,8 @@ export default defineConfig({
       },
       workbox: {
         navigateFallback: "/index.html",
+        // /api navigations (Access sign-in via /api/auth/refresh) must reach the network.
+        navigateFallbackDenylist: [/^\/api\//],
         globPatterns: ["**/*.{js,css,html,svg,woff2}"],
       },
     }),
