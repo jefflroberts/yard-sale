@@ -3,6 +3,7 @@ import { desc, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import type { AgentRunEvent, AgentRunHistory, AnalysisResponse, DetectedItem, HistoryPage, Stats } from "../src/types";
 import { HISTORY_PAGE_SIZE, HistoryQueryError, historyQuery } from "./history";
+import { reauthRedirect } from "./auth";
 import { agentInstructions, analyzeFrame, buildAgentInputText } from "./agent";
 import { appStats, frameRuns, items, scanSessions } from "./db/schema";
 import { EditionSelectionError, normalizeCandidateEditions, parseEditionSelection, replaceEditions, selectEdition, syncSelectedEdition } from "./editions";
@@ -28,6 +29,10 @@ export default {
     try {
       if (request.method === "GET" && url.pathname === "/api/health") {
         return Response.json({ ok: true, model: env.OPENAI_MODEL });
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/auth/refresh") {
+        return reauthRedirect(url);
       }
 
       if (request.method === "GET" && url.pathname === "/api/stats") {
